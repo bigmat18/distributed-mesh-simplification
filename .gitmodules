@@ -1,0 +1,9 @@
+[submodule "libs/OpenMesh"]
+	path = libs/OpenMesh
+	url = https://gitlab.vci.rwth-aachen.de:9000/OpenMesh/OpenMesh.git
+[submodule "libs/eigen"]
+	path = libs/eigen
+	url = https://github.com/PX4/eigen.git
+[submodule "libs/cxxopts"]
+	path = libs/cxxopts
+	url = https://github.com/jarro2783/cxxopts.git
