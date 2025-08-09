@@ -1,3 +1,4 @@
+#include "utils/debug.h"
 #include "utils/massert.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
 #include <OpenMesh/Core/Mesh/TriMesh_ArrayKernelT.hh>
@@ -6,16 +7,17 @@
 
 using Mesh = OpenMesh::TriMesh_ArrayKernelT<>;
 
-void f() {
-    ASSERT(false, "This is my first assert");
-}
-
-void g() { int a; f(); ASSERT(false, "Second assert"); }
 
 int main(void) {
     Mesh mesh;
 
-    g();
+    int a = 4;
+    std::string s = "Ciao";
+    std::vector<float> v{1.0, 2.0, -0.4};
+
+    BREAK(VAR(a), VAR(s), VAR(v));
+
+    BREAK_COND(a == 4, VAR(a), VAR(s), VAR(v));
 
     if (!OpenMesh::IO::read_mesh(mesh, "assets/bunny.obj")) {
         LOG_ERROR("Error in file loading");

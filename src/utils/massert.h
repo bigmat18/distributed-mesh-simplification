@@ -1,6 +1,7 @@
 #ifndef MASSERT_H
 #define MASSERT_H
 
+
 #include <iostream>
 #include <atomic>
 #include <string>
@@ -15,15 +16,14 @@
 #endif
 
 #if __has_include(<stacktrace>)
-#  include <stacktrace>
-   constexpr bool IsStackTraceAvailable = true;
+    #include <stacktrace>
+    constexpr bool IsStackTraceAvailableAssert = true;
 #else
-#  pragma message("warning: <stacktrace> not available — stack dumps will be disabled")
-   constexpr bool IsStackTraceAvailable = false;
+    #warning "<stacktrace> not available — stack dumps will be disabled"
+    constexpr bool IsStackTraceAvailableAssert = false;
 #endif
 
 class Assert {
-    static inline std::mutex mtx;
 
 public:
     static inline void Check(bool condition, const std::string expr, 
@@ -31,20 +31,23 @@ public:
                              const std::source_location& location) 
     {
         if (!condition) {
-            std::lock_guard<std::mutex> lock(mtx);
-            std::cerr << "\n[Assertion failed] " << expr  << "\n";
-            std::cerr << "\t Thread ID: " << GetThreadID() << "\n";
-            std::cerr << "\t Msg: " << message << "\n\n";
+            std::lock_guard<std::mutex> lock(sMutex);
+            std::cerr << "\n[ASSERTION]\n"; 
 
-            if constexpr (IsStackTraceAvailable) {
-                std::cerr << "[Stack trace]\n";
+            std::cerr << "\t[Information]\n"; 
+            std::cerr << "\t\tCondition: "<< expr  << "\n";
+            std::cerr << "\t\tThread ID: " << GetThreadID() << "\n";
+            std::cerr << "\t\tMsg: " << message << "\n\n";
+
+            std::cerr << "\t[Stacktrace]\n";
+            if constexpr (IsStackTraceAvailableAssert) {
                 auto trace = std::stacktrace::current();
                 for (std::size_t i = 1; i < trace.size(); ++i) {
-                    std::cerr << trace[i] << '\n';
+                    std::cerr << "\t\t" << trace[i] << '\n';
                 }
             } else {
-                std::cerr << "\t File: " << location.file_name() << ":" << location.line() << ":" << location.column() << "\n";
-                std::cerr << "\t Function: " << location.function_name() << std::endl;
+                std::cerr << "\t\tFile: " << location.file_name() << ":" << location.line() << ":" << location.column() << "\n";
+                std::cerr << "\t\tFunction: " << location.function_name() << std::endl;
             }
 
             throw std::runtime_error(message);
@@ -52,6 +55,8 @@ public:
     }
 
 private:
+    static inline std::mutex sMutex;
+
     static std::string GetThreadID() {
         #ifdef _OPENMP
         if (omp_in_parallel())
@@ -63,7 +68,12 @@ private:
     }
 };
 
-#define ASSERT(condition, message) \
-    ::Assert::Check((condition), #condition ,message, std::source_location::current())
+#ifndef NDEBUG
+    #define ASSERT(condition, message) \
+        ::Assert::Check((condition), #condition ,message, std::source_location::current())
+#else 
+    #warning "Assert are not available"
+    #define ASSERT(condition, message)
+#endif // !NDEBUG
 
 #endif // !MASSERT_H
