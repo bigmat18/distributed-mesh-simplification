@@ -26,7 +26,7 @@
 
 class Debug {
 public:
-    template <typename... Args>
+    template <bool stop = true, typename... Args>
     static inline void Breakpoint(
         const std::source_location& location,
         const bool condition = true,
@@ -53,8 +53,11 @@ public:
             }
             std::cerr << "\t[Variables]\n";
             PrintVariables(args...);
-            std::cerr << "\n[Press Enter to continue]" << std::endl;
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+            if constexpr (stop) {
+                std::cerr << "\n[Press Enter to continue]" << std::endl;
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            }
         }
     }
 
@@ -101,13 +104,19 @@ private:
 
 #ifndef NDEBUG
     #define VAR(var) std::make_pair(std::string(#var), var)
+
     #define BREAK(...) ::Debug::Breakpoint(std::source_location::current(), true, "" __VA_OPT__(, __VA_ARGS__))
+
+    #define BREAK_RUN(...) ::Debug::Breakpoint<false>(std::source_location::current(), true, "" __VA_OPT__(, __VA_ARGS__))
+
     #define BREAK_COND(condition, ...) \
         ::Debug::Breakpoint(std::source_location::current(), (condition), #condition __VA_OPT__(, __VA_ARGS__))
 #else
     #pragma message("Debug are disabled")
     #define DEBUG_VAR(var)
     #define BREAK(...) ((void)0)
+    #define BREAK_RUN(...) ((void)0)
+    #define BREAK_COND(condition, ...) ((void)0)
 #endif
 
 #endif
