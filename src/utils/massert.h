@@ -70,7 +70,7 @@ private:
 
 #ifndef NDEBUG
     #define ASSERT(condition, message) \
-        ::Assert::Check((condition), #condition ,message, std::source_location::current())
+        ::Assert::Check((condition), #condition, message, std::source_location::current())
 #else 
     #warning "Assert are not available"
     #define ASSERT(condition, message)
