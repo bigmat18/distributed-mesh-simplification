@@ -1,100 +1,55 @@
-#include "utils/debug.h"
-#include "utils/massert.h"
-#include "utils/profiling.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
 #include <OpenMesh/Core/Mesh/TriMesh_ArrayKernelT.hh>
 
+#include <cstdint>
+#include <cxxopts.hpp>
 #include <unistd.h>
 #include <utils/utils.h>
 
-using Mesh = OpenMesh::TriMesh_ArrayKernelT<>;
+#include <Eigen/Dense>
+
+struct Traits : public OpenMesh::DefaultTraits {
+    VertexTraits { Eigen::Matrix4d quadric; };
+    EdgeTraits {
+        double collapse_cost;
+        OpenMesh::Vec3d optimal_pos;
+    };
+};
+using Mesh = OpenMesh::TriMesh_ArrayKernelT<Traits>;
 
 
-int main(void) {
-    //Mesh mesh;
+void EvaluateVertexQuadratic() {};
 
-    //int a = 4;
-    //std::string s = "Ciao";
-    //std::vector<float> v{1.0, 2.0, -0.4};
+void EvaluateFacePlane() {};
 
-    //BREAK(VAR(a), VAR(s), VAR(v));
+void EvaluateQuadraticError() {};
 
-    //BREAK_COND(a == 4, VAR(a), VAR(s), VAR(v));
 
-    //if (!OpenMesh::IO::read_mesh(mesh, "assets/bunny.obj")) {
-        //LOG_ERROR("Error in file loading");
-        //return 1;
-    //}
-    //LOG_INFO("File loaded");
-    
-    const int N = 3;
+int main(int argc, char **argv) {
+    ASSERT(argc > 1, "Need [input file]");
 
-    // Parallel region
-    #pragma omp parallel for
-    for (int i = 0; i < N; ++i) {
-        // Ogni iterazione è un "profiling scope" (può essere anche più annidato)
-        PROFILING_SCOPE("LoopIteration");
+    cxxopts::Options options("cli", "CLI app to test distributed mesh simplification");
+    options.add_options()      
+        ("i,filename", "Input filename list", cxxopts::value<std::string>())
+        ("n,target", "Target faces", cxxopts::value<uint32_t>());
 
-        // Simula lavoro diverso per ogni thread
-        std::this_thread::sleep_for(std::chrono::milliseconds(10 + i * 5));
+    options.parse_positional({"filename"});
+    auto result = options.parse(argc, argv);
 
-        //// Profiling annidato (opzionale)
-        //{
-            //PROFILING_SCOPE("InnerWork");
-            //std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        //}
+    if(result.count("help")) {
+        printf("%s", options.help().c_str()); 
+        return 0;
     }
 
-    // Stampa il profiling aggregato
-    PROFILING_PRINT();
+    ASSERT(result.count("filename") >= 1, "Need [input filename]");
+    const std::string FILENAME        = result["filename"].as<std::string>();
+    const uint32_t    TARGET_FACES    = result["target"].as<uint32_t>();
 
+    Mesh mesh;
+    ASSERT(OpenMesh::IO::read_mesh(mesh, FILENAME), "Error in mesh import");
+    LOG_INFO("%s successfully imported", FILENAME.c_str());
 
-    {
-        PROFILING_SCOPE("Main");
-        {
-            PROFILING_SCOPE("test1");
-            sleep(1);
-
-            {
-                PROFILING_SCOPE("pippo");
-                sleep(1);
-            }
-            {
-                PROFILING_SCOPE("sofia");
-                sleep(1);
-            }
-        }
-
-        {
-            PROFILING_SCOPE("test2"); 
-            sleep(2);
-        }
-    }
-    PROFILING_PRINT();
-
-
-    //{
-        //PROFILING_SCOPE("Main2");
-        //{
-            //PROFILING_SCOPE("test12");
-            //sleep(1);
-
-            //{
-                //PROFILING_SCOPE("pippo2");
-                //sleep(1);
-            //}
-            //{
-                //PROFILING_SCOPE("sofia1");
-                //sleep(2);
-            //}
-        //}
-
-        //{
-            //PROFILING_SCOPE("test3"); 
-            //sleep(1);
-        //}
-    //}
-    //PROFILING_PRINT();
 
     return 0;
+
 }
