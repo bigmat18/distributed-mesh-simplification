@@ -43,4 +43,7 @@ target_link_libraries(main
 
 target_compile_options(main PUBLIC 
     -enable-libstdcxx-backtrace=yes
+    -Wno-deprecated-enum-enum-conversion
+    -Wno-unused-result
+    -Wno-deprecated-declarations
 )
