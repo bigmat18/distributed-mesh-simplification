@@ -1,4 +1,7 @@
+#include "OpenMesh/Core/Geometry/Vector11T.hh"
 #include "OpenMesh/Core/Mesh/Handles.hh"
+#include "utils/debug.h"
+#include "utils/massert.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
 #include <OpenMesh/Core/Mesh/TriMesh_ArrayKernelT.hh>
 
@@ -18,7 +21,7 @@ struct Traits : public OpenMesh::DefaultTraits {
     };
 
     EdgeTraits { 
-        float Error;
+        double Error;
         Eigen::Vector4d NewVertex;
     };
 };
@@ -80,31 +83,27 @@ inline Eigen::Vector4d EvaluateNewBestVertex(const Mesh& mesh,
                Q(0,2), Q(1,2), Q(2,2), Q(2,3),
                0.0f,   0.0f,   0.0f,   1.0f;
 
-    if (fabs(quadric.determinant()) > 1e-6f) {
-        auto error = [&](const Eigen::Vector4d& p) { return p.transpose() * Q * p; };
+    auto Error = [&](const Eigen::Vector4d& p) { return p.transpose() * Q * p; };
 
+    if (fabs(quadric.determinant()) > 1e-12)
+        return quadric.inverse() * Eigen::Vector4d(0, 0, 0, 1);
+   
+    else {
         auto heh = mesh.halfedge_handle(eh, 0);
         auto vh1 = mesh.from_vertex_handle(heh);
         auto vh2 = mesh.to_vertex_handle(heh);
+        Eigen::Vector4d p1(mesh.point(vh1)[0], mesh.point(vh1)[1], mesh.point(vh1)[2], 1.f);
+        Eigen::Vector4d p2(mesh.point(vh2)[0], mesh.point(vh2)[1], mesh.point(vh2)[2], 1.f);
+        Eigen::Vector4d mid = 0.5 * (p1 + p2);
 
-        auto coords1 = mesh.point(vh1);
-        auto coords2 = mesh.point(vh2);
-    
-        Eigen::Vector4d p1 = Eigen::Vector4d(coords1[0], coords1[1], coords1[2], 1);
-        Eigen::Vector4d p2 = Eigen::Vector4d(coords2[0], coords2[1], coords2[2], 1);
-    
-        Eigen::Vector4d mid = 0.5f * (p1 + p2);
+        double e1 = Error(p1);
+        double e2 = Error(p2);
+        double em = Error(mid);
 
-        float e1 = error(p1);
-        float e2 = error(p2);
-        float em = error(mid);
-
-        if      (e1 <= e2 && e1 <= em)  return p1;
+        if (e1 <= e2 && e1 <= em)       return p1;
         else if (e2 <= e1 && e2 <= em)  return p2;
         else                            return mid;
     }
-
-    return quadric.inverse() * Eigen::Vector4d(0.f, 0.f, 0.f, 1.f);
 }
 
 
@@ -132,6 +131,10 @@ int main(int argc, char **argv) {
     Mesh mesh;
     ASSERT(OpenMesh::IO::read_mesh(mesh, FILENAME), "Error in mesh import");
     LOG_INFO("%s successfully imported", FILENAME.c_str());
+    mesh.request_vertex_status();
+    mesh.request_edge_status();
+    mesh.request_face_status();
+    mesh.request_halfedge_status();
 
 
     
@@ -154,9 +157,11 @@ int main(int argc, char **argv) {
 
     for (auto e_it = mesh.edges_begin(); e_it != mesh.edges_end(); ++e_it) {
         auto eh = *e_it;
-        Eigen::Matrix4d Q0 = mesh.data(eh.v0()).Quadric;
-        Eigen::Matrix4d Q1 = mesh.data(eh.v1()).Quadric;
-        Eigen::Matrix4d Q = Q0 + Q1;
+        auto heh = mesh.halfedge_handle(eh, 0);
+        auto v0 = mesh.from_vertex_handle(heh);
+        auto v1 = mesh.to_vertex_handle(heh);
+
+        Eigen::Matrix4d Q = mesh.data(v0).Quadric + mesh.data(v1).Quadric;
         Eigen::Vector4d newV = EvaluateNewBestVertex(mesh, eh, Q);
 
         mesh.data(eh).Error = newV.transpose() * Q * newV;
@@ -164,18 +169,53 @@ int main(int argc, char **argv) {
         pq.push(eh);
     }
 
+    //while (!pq.empty()) {
+        //auto eh = pq.top();
+        //pq.pop();
 
-   
-    while (!pq.empty()) {
+        //auto heh = mesh.halfedge_handle(eh, 0);
+        //auto vh0 = mesh.from_vertex_handle(heh);
+        //auto vh1 = mesh.to_vertex_handle(heh);
+
+        //OpenMesh::Vec3f c0 = mesh.point(vh0);
+        //OpenMesh::Vec3f c1 = mesh.point(vh1);
+        //Eigen::Vector4d nc = mesh.data(eh).NewVertex;
+        //std::cout << "V0: (" << c0[0] << "," << c0[1] << "," << c0[2] << 
+                  //") V1: (" << c1[0] << "," << c1[1] << "," << c1[2] <<
+                  //") newVetex: (" << nc.x() << "," << nc.y() << "," << nc.z() << ")" << std::endl;
+    //}
+  
+
+    while (mesh.n_faces() > TARGET_FACES && !pq.empty()) {
         auto eh = pq.top();
         pq.pop();
-        std::cout << "Edge " << eh.idx()
-                  << " errore: " << mesh.data(eh).Error << "\n";
-    }
-    //while (mesh.n_faces() > TARGET_FACES) {
-        //auto eh = pq.top();
-    //}
 
+        if (mesh.status(eh).deleted()) {
+            BREAK();
+            continue;
+        }
+
+        auto heh = mesh.halfedge_handle(eh, 0);
+
+        if (!mesh.is_collapse_ok(heh)) {BREAK(); continue;}
+        
+        auto vh_to_keep = mesh.to_vertex_handle(heh);
+        Eigen::Vector4d newVertex = mesh.data(eh).NewVertex;
+        OpenMesh::Vec3f coords(newVertex.x(), newVertex.y(), newVertex.z());
+
+        mesh.set_point(vh_to_keep, coords);
+        mesh.collapse(heh);
+
+        break;
+    }
+    mesh.garbage_collection();
+
+    std::cout << "Dopo il collasso: " 
+              << mesh.n_edges() << " edges, " 
+              << mesh.n_faces() << " faces\n";
+
+    ASSERT(OpenMesh::IO::write_mesh(mesh, "out/out.obj"), "Error in mesh export!");
+    LOG_INFO("Mesh successfully exported!");
     return 0;
 
 } 
