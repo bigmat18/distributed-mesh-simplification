@@ -59,7 +59,7 @@ inline void ProfilingMergeTree(const std::shared_ptr<ProfNode>& global,
                                const std::shared_ptr<ProfNode>& local, 
                                int count) 
 {
-    ASSERT(global->mName == local->mName, "Trees are not equal");
+    ASSERT(global->mName == local->mName, "Trees are not equal (" + global->mName + "!=" + local->mName + ")");
 
     if (global->IsLeaf()) {
         global->mValue += (local->mValue - global->mValue) / count;

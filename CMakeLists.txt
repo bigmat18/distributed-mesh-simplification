@@ -18,32 +18,37 @@ set(OPENMESH_BUILD_APPS OFF CACHE BOOL "" FORCE)
 set(OPENMESH_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${LIBS_DIR}/OpenMesh")
 
-
 file(GLOB_RECURSE CPP_FILES "${SRC_DIR}/*.cpp")
 
-add_executable(main "${SRC_DIR}/main.cpp" ${CPP_FILES})
-
-target_include_directories(main
+function(configure_exe_target target_name)
+  target_include_directories(${target_name}
     PUBLIC
-        "${SRC_DIR}"
-        "${LIBS_DIR}/eigen"
-        SYSTEM "${LIBS_DIR}/OpenMesh/src"
-        "${LIBS_DIR}/cxxopts/include"
-)
+      "${SRC_DIR}"
+      "${LIBS_DIR}/eigen"
+      SYSTEM "${LIBS_DIR}/OpenMesh/src"
+      "${LIBS_DIR}/cxxopts/include"
+  )
 
-target_link_libraries(main
+  target_link_libraries(${target_name}
     PUBLIC
-        OpenMeshCore
-        OpenMeshTools
-        cxxopts
-        OpenMP::OpenMP_CXX
-        MPI::MPI_CXX
-        stdc++exp
-)
+      OpenMeshCore
+      OpenMeshTools
+      cxxopts
+      OpenMP::OpenMP_CXX
+      MPI::MPI_CXX
+      stdc++exp
+  )
 
-target_compile_options(main PUBLIC 
+  target_compile_options(${target_name} PUBLIC 
     -enable-libstdcxx-backtrace=yes
     -Wno-deprecated-enum-enum-conversion
     -Wno-unused-result
     -Wno-deprecated-declarations
-)
+  )
+endfunction()
+
+foreach(src_file IN LISTS CPP_FILES)
+  get_filename_component(exe_name "${src_file}" NAME_WE)
+  add_executable(${exe_name} "${src_file}")
+  configure_exe_target(${exe_name})
+endforeach()
