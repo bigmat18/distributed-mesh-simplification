@@ -90,8 +90,8 @@ private:
 
     static void PrintVariables() {}
 
-
-    static std::string GetThreadID() {
+    static std::string GetThreadID() 
+    {
         #ifdef _OPENMP
         if (omp_in_parallel())
             return std::to_string(omp_get_thread_num());
@@ -116,7 +116,7 @@ private:
     #define DEBUG_VAR(var)
     #define BREAK(...) ((void)0)
     #define BREAK_RUN(...) ((void)0)
-    #define BREAK_COND(condition, ...) ((void)0)
+    #define BREAK_COND(...) ((void)0)
 #endif
 
 #endif
