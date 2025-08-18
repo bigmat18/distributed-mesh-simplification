@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <ostream>
+#include <sstream>
 #include <vector>
 #include <string>
 #include <utility>
@@ -10,6 +11,7 @@
 #include <source_location>
 #include <mutex>
 #include <thread>
+#include <memory>
 
 
 #ifdef _OPENMP
@@ -52,7 +54,7 @@ public:
                 std::cerr << "\t\tFunction: " << location.function_name() << "\n";
             }
             std::cerr << "\t[Variables]\n";
-            PrintVariables(args...);
+            std::cerr << PrintVariables(args...).str();
 
             if constexpr (stop) {
                 std::cerr << "\n[Press Enter to continue]" << std::endl;
@@ -65,30 +67,39 @@ private:
     static inline std::mutex sMutex;
 
     template <typename T>
-    static void PrintVariable(const std::pair<std::string, std::vector<T>>& var) {
-        std::cerr << "\t\t" << var.first
-                  << " [addr: " << &var.second << "] = [";
+    static std::ostringstream PrintVariable(const std::pair<std::string, std::vector<T>>& var) {
+        std::ostringstream os;
+        os << var.first
+           << " [addr: " << &var.second << "] = [";
+
         for (size_t i = 0; i < var.second.size(); ++i) {
-            std::cerr << var.second[i];
-            if (i + 1 < var.second.size()) std::cerr << ", ";
+            auto pair = std::make_pair(std::to_string(i), var.second[i]); 
+            os << PrintVariable(pair).str();
+            if (i + 1 < var.second.size()) os << ", ";
         }
-        std::cerr << "]" << "\n";
+        os << "]";
+        return os;
     }
     
     template <typename T>
-    static void PrintVariable(const std::pair<std::string, T>& var) {
-        std::cerr << "\t\t" << var.first
-                  << " [addr: " << &var.second << "] = "
-                  << var.second << "\n";
+    static std::ostringstream PrintVariable(const std::pair<std::string, T>& var) {
+        std::ostringstream os;
+        os << var.first
+           << " [addr: " << &var.second << "] = "
+           << var.second;
+        return os;
     }
+
 
     template <typename T, typename... Args>
-    static void PrintVariables(const std::pair<std::string, T>& var, const Args&... args) {
-        PrintVariable(var);
-        PrintVariables(args...);
+    static std::ostringstream PrintVariables(const std::pair<std::string, T>& var, const Args&... args) {
+        std::ostringstream os;
+        os << "\t\t" << PrintVariable(var).str() << "\n";
+        os << PrintVariables(args...).str();
+        return os;
     }
 
-    static void PrintVariables() {}
+    static std::ostringstream PrintVariables() { return std::ostringstream{}; }
 
     static std::string GetThreadID() 
     {

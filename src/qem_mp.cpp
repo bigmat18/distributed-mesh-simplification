@@ -1,8 +1,10 @@
+#include "OpenMesh/Core/Mesh/Handles.hh"
 #include "utils/profiling.h"
 #include <cstdint>
 #include <cxxopts.hpp>
 #include <iostream>
 #include <iterator>
+#include <mutex>
 #include <ostream>
 #include <queue>
 #include <unistd.h>
@@ -44,28 +46,32 @@ int main(int argc, char **argv) {
         return mesh.data(e1).Error > mesh.data(e2).Error;
     };
 
-    std::priority_queue<
-    Mesh::EdgeHandle,
-    std::vector<Mesh::EdgeHandle>,
-    decltype(cmp)
-    > pq(cmp);
+    std::mutex pq_mutex;
+    std::priority_queue<Mesh::EdgeHandle, 
+                        std::vector<Mesh::EdgeHandle>, 
+                        decltype(cmp)> pq(cmp);
     {
         PROFILING_SCOPE("CSG");
+
+        ProfilingLock();
+        #pragma omp parallel
         {
             PROFILING_SCOPE("Inizialization");
 
             {
                 PROFILING_SCOPE("Init-Vertices-Quadratic");
-                for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-                    const auto vh = *v_it;
+                #pragma omp for nowait
+                for (int i = 0; i < mesh.n_vertices(); ++i) {
+                    const auto vh = Mesh::VertexHandle(i);
                     mesh.data(vh).Quadric = EvaluateVertexQuadratic(mesh, vh);
                 }
             }
 
             {
                 PROFILING_SCOPE("Init-Edges-Quadric");
-                for (auto e_it = mesh.edges_begin(); e_it != mesh.edges_end(); ++e_it) {
-                    auto eh = *e_it;
+                #pragma omp for
+                for (int i = 0; i < mesh.n_edges(); ++i) {
+                    auto eh = Mesh::EdgeHandle(i);
                     auto heh = mesh.halfedge_handle(eh, 0);
                     auto v0 = mesh.from_vertex_handle(heh);
                     auto v1 = mesh.to_vertex_handle(heh);
@@ -75,14 +81,17 @@ int main(int argc, char **argv) {
 
                     mesh.data(eh).Error = newV.transpose() * Q * newV;
                     mesh.data(eh).NewVertex = newV;
-                    pq.push(eh);
+                    {
+                        std::lock_guard<std::mutex> lock(pq_mutex);
+                        pq.push(eh);
+                    }
                 } 
             }
         }
+        ProfilingUnLock();
 
         {
             PROFILING_SCOPE("Processing");
-
             {
                 PROFILING_SCOPE("Simplification Loop");
                 int deletedFaces = 0;
@@ -103,7 +112,6 @@ int main(int argc, char **argv) {
 
                     if (mesh.status(vh0).deleted() || mesh.status(vh1).deleted()) 
                         continue;
-
                     Eigen::Vector4d newVertex = mesh.data(eh).NewVertex;
                     OpenMesh::Vec3f coords(newVertex.x(), newVertex.y(), newVertex.z());
 
@@ -111,38 +119,60 @@ int main(int argc, char **argv) {
                     mesh.data(vh1).Quadric = mesh.data(vh1).Quadric + mesh.data(vh0).Quadric;
                     mesh.collapse(heh);
 
-                    for (auto vf_it = mesh.vf_iter(vh1); vf_it.is_valid(); ++vf_it) {
-                        auto fh = *vf_it;
-                        if (mesh.status(fh).deleted()) continue;
+                    #pragma omp single
+                    {
+                        for (auto vf_it = mesh.vf_iter(vh1); vf_it.is_valid(); ++vf_it) {
+                            auto fh = *vf_it;
+                            if (mesh.status(fh).deleted()) continue;
 
-                        for (auto fv_it = mesh.fv_iter(fh); fv_it.is_valid(); ++fv_it) {
-                            auto v = *fv_it;
-                            if (mesh.status(v).deleted()) continue;
-                            mesh.data(v).Quadric = EvaluateVertexQuadratic(mesh, v);
+                            #pragma omp task firstprivate(fh) shared(pq_mutex)
+                            {
+                                for (auto fv_it = mesh.fv_iter(fh); fv_it.is_valid(); ++fv_it) {
+                                    auto v = *fv_it;
+                                    if (mesh.status(v).deleted()) continue;
+                                    {
+                                        std::lock_guard<std::mutex> lock(pq_mutex);
+                                        mesh.data(v).Quadric = EvaluateVertexQuadratic(mesh, v);
+                                    }
+                                }
+                            }
                         }
+
                     }
 
-                    for (auto vf_it = mesh.vf_iter(vh1); vf_it.is_valid(); ++vf_it) {
-                        auto fh = *vf_it;
-                        if (mesh.status(fh).deleted()) continue;
 
-                        for (auto fe_it = mesh.fe_iter(fh); fe_it.is_valid(); ++fe_it) {
-                            auto ehl = *fe_it;
-                            if (mesh.status(ehl).deleted()) continue;
 
-                            auto he0 = mesh.halfedge_handle(ehl, 0);
+                    #pragma omp single 
+                    {
+                        for (auto vf_it = mesh.vf_iter(vh1); vf_it.is_valid(); ++vf_it) {
+                            auto fh = *vf_it;
+                            if (mesh.status(fh).deleted()) continue;
 
-                            auto v0 = mesh.from_vertex_handle(he0);
-                            auto v1 = mesh.to_vertex_handle(he0);
-                            if (mesh.status(v0).deleted() || mesh.status(v1).deleted()) continue;
+                            #pragma omp task firstprivate(fh) shared(pq_mutex)
+                            {
+                                for (auto fe_it = mesh.fe_iter(fh); fe_it.is_valid(); ++fe_it) {
+                                    auto ehl = *fe_it;
+                                    if (mesh.status(ehl).deleted()) continue;
 
-                            Eigen::Matrix4d Q = mesh.data(v0).Quadric + mesh.data(v1).Quadric;
-                            Eigen::Vector4d newV = EvaluateNewBestVertex(mesh, ehl, Q);
+                                    auto he0 = mesh.halfedge_handle(ehl, 0);
 
-                            mesh.data(ehl).Error = newV.transpose() * Q * newV;
-                            mesh.data(ehl).NewVertex = newV;
-                            pq.push(ehl);
+                                    auto v0 = mesh.from_vertex_handle(he0);
+                                    auto v1 = mesh.to_vertex_handle(he0);
+                                    if (mesh.status(v0).deleted() || mesh.status(v1).deleted()) continue;
+
+                                    Eigen::Matrix4d Q = mesh.data(v0).Quadric + mesh.data(v1).Quadric;
+                                    Eigen::Vector4d newV = EvaluateNewBestVertex(mesh, ehl, Q);
+
+                                    {
+                                        std::lock_guard<std::mutex> lock(pq_mutex);
+                                        mesh.data(ehl).Error = newV.transpose() * Q * newV;
+                                        mesh.data(ehl).NewVertex = newV;
+                                        pq.push(ehl);
+                                    }
+                                }
+                            }
                         }
+
                     }
                     deletedFaces += 2 - mesh.is_boundary(eh);
                 }
@@ -154,11 +184,11 @@ int main(int argc, char **argv) {
         }
     }
 
+    PROFILING_PRINT();
     LOG_DEBUG("Mesh vertices: %lu, edges: %lu, faces: %lu", mesh.n_vertices(), mesh.n_edges(), mesh.n_faces());
     ASSERT(OpenMesh::IO::write_mesh(mesh, "out/out.obj"), "Error in mesh export!");
     LOG_INFO("Mesh successfully exported!");
 
-    PROFILING_PRINT();
     return 0;
 
 } 
