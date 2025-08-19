@@ -19,7 +19,7 @@
     #include <stacktrace>
     constexpr bool IsStackTraceAvailableAssert = true;
 #else
-    #warning "<stacktrace> not available — stack dumps will be disabled"
+    #pragma message("<stacktrace> not available — stack dumps will be disabled")
     constexpr bool IsStackTraceAvailableAssert = false;
 #endif
 
@@ -72,7 +72,7 @@ private:
     #define ASSERT(condition, message) \
         ::Assert::Check((condition), #condition, message, std::source_location::current())
 #else 
-    #warning "Assert are not available"
+    #pragma message("Asserts are not availble")
     #define ASSERT(condition, message)
 #endif // !NDEBUG
 

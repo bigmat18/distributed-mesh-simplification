@@ -1,3 +1,5 @@
+#define PROFILING 1
+
 #ifndef PROFILING_H
 #define PROFILING_H
 
@@ -159,34 +161,42 @@ public:
     
 };
 
-#define PROFILING_PRINT() {                                                           \
-    std::lock_guard<std::mutex> lock(__GlobalProfilingRootMutex);                     \
-    ASSERT(__GlobalProfilingRoot != nullptr, "Global Profiling Root are invalid");    \
-    std::cout << ProfilingPrint(__GlobalProfilingRoot);                               \
-    ProfilingCleanup();                                                               \
-}
-
-
-#define PROFILING_LOCK() {                                              \
-    auto start = std::chrono::high_resolution_clock::now();             \
-    ProfilingLock();                                                    \
-    auto end = std::chrono::high_resolution_clock::now();               \
-    __SavedDeltaTime += static_cast<float>(                             \
-        std::chrono::duration<double, std::milli>(end - mStart).count() \
-    );                                                                  \
-}
-
-#define PROFILING_UNLOCK() {                                            \
-    auto start = std::chrono::high_resolution_clock::now();             \
-    ProfilingUnLock();                                                  \
-    auto end = std::chrono::high_resolution_clock::now();               \
-    __SavedDeltaTime += static_cast<float>(                             \
-        std::chrono::duration<double, std::milli>(end - mStart).count() \
-    );                                                                  \
-    __LocalProfilingStack.back().mValue -= __SavedDeltaTime;            \
-    __SavedDeltaTime = 0;                                               \
-}
-
-#define PROFILING_SCOPE(msg) Profiling timer##__LINE__(msg)
+#if PROFILING
+    #define PROFILING_PRINT() {                                                           \
+        std::lock_guard<std::mutex> lock(__GlobalProfilingRootMutex);                     \
+        ASSERT(__GlobalProfilingRoot != nullptr, "Global Profiling Root are invalid");    \
+        std::cout << ProfilingPrint(__GlobalProfilingRoot);                               \
+        ProfilingCleanup();                                                               \
+    }
+    
+    
+    #define PROFILING_LOCK() {                                              \
+        auto start = std::chrono::high_resolution_clock::now();             \
+        ProfilingLock();                                                    \
+        auto end = std::chrono::high_resolution_clock::now();               \
+        __SavedDeltaTime += static_cast<float>(                             \
+            std::chrono::duration<double, std::milli>(end - start).count()  \
+        );                                                                  \
+    }
+    
+    #define PROFILING_UNLOCK() {                                            \
+        auto start = std::chrono::high_resolution_clock::now();             \
+        ProfilingUnLock();                                                  \
+        auto end = std::chrono::high_resolution_clock::now();               \
+        __SavedDeltaTime += static_cast<float>(                             \
+            std::chrono::duration<double, std::milli>(end - start).count()  \
+        );                                                                  \
+        __LocalProfilingStack.back()->mValue -= __SavedDeltaTime;           \
+        __SavedDeltaTime = 0;                                               \
+    }
+    
+    #define PROFILING_SCOPE(msg) Profiling timer##__LINE__(msg)
+#else 
+    #pragma message("Profiling are not availble")
+    #define PROFILING_PRINT()
+    #define PROFILING_LOCK()
+    #define PROFILING_UNLOCK()
+    #define PROFILING_SCOPE(msg)
+#endif
 
 #endif // !PROFILING_H
